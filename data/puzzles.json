@@ -1,0 +1,47 @@
+[
+  {
+    "id": "001",
+    "pair": "EUR/USD",
+    "frame": "15m · London session",
+    "scenario": "Price has tested the same resistance level twice in the last two hours. Volatility (ATR) is rising and the 20 EMA is above the 50 EMA.",
+    "chart": "breakout",
+    "ev": { "buy": 0.34, "sell": -0.12, "wait": 0.04 },
+    "note": "Repeated tests of a level with rising volatility and an aligned trend have historically favored continuation more often than reversal in this synthetic sample — but the edge is modest, which is why WAIT still beats SELL comfortably."
+  },
+  {
+    "id": "002",
+    "pair": "GBP/USD",
+    "frame": "1h · New York session",
+    "scenario": "Price just spiked through the prior day's high on a news release, then immediately gave back two-thirds of the move within 15 minutes.",
+    "chart": "fakeout",
+    "ev": { "buy": -0.28, "sell": 0.19, "wait": 0.31 },
+    "note": "Fast post-news spikes that reverse sharply are a classic \"fakeout\" pattern. Chasing the initial breakout (BUY) scores worst here — the highest-EV choice is often simply not participating."
+  },
+  {
+    "id": "003",
+    "pair": "USD/JPY",
+    "frame": "4h · Asian session",
+    "scenario": "Price has been ranging sideways for six sessions between two well-respected levels, with no clear trend and below-average volatility.",
+    "chart": "range",
+    "ev": { "buy": 0.03, "sell": 0.02, "wait": 0.11 },
+    "note": "Low-volatility, no-trend conditions rarely offer a clean directional edge. WAIT scores highest because there's no statistical reason to prefer a direction — this is a \"no trade\" setup by design."
+  },
+  {
+    "id": "004",
+    "pair": "AUD/USD",
+    "frame": "30m · Sydney session",
+    "scenario": "Price has broken below a well-tested support level with expanding volume and is now retesting that same level from below.",
+    "chart": "breakdown",
+    "ev": { "buy": -0.31, "sell": 0.29, "wait": 0.06 },
+    "note": "A \"break and retest\" of support from below, on expanding volume, is one of the more consistent continuation setups in this puzzle set — SELL has the clearest edge of any option here."
+  },
+  {
+    "id": "005",
+    "pair": "EUR/JPY",
+    "frame": "15m · Tokyo/London overlap",
+    "scenario": "Price is chopping in a tight 15-pip range for the last 90 minutes right before a major central bank rate decision is due.",
+    "chart": "range",
+    "ev": { "buy": -0.05, "sell": -0.04, "wait": 0.22 },
+    "note": "Pre-announcement chop ahead of a major rate decision is close to pure noise, and the coming volatility spike is unpredictable in direction. WAIT is the clear best decision."
+  }
+]

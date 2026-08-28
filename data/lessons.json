@@ -1,0 +1,55 @@
+{
+  "sections": [
+    {
+      "id": "basics",
+      "label": "Currency Basics",
+      "lessons": [
+        {"id":"what-is-forex","icon":"exchange","title":"What is forex?","subtitle":"Buying one, selling another","body":"Forex is the market where currencies are traded against each other, 24 hours a day, five days a week. Every trade is really a pair — you're buying one currency while simultaneously selling another.","start":true},
+        {"id":"currency-pairs","icon":"pair","title":"Currency pairs","subtitle":"Base currency vs quote currency","body":"A pair like EUR/USD shows how much of the quote currency (USD) it takes to buy one unit of the base currency (EUR). If EUR/USD rises, the euro is strengthening against the dollar."},
+        {"id":"pips","icon":"pip","title":"What is a pip?","subtitle":"The smallest standard price move","body":"The smallest standard price move in a currency pair — usually the 4th decimal place. It's the unit almost everything else (stops, targets, position size) is measured in."},
+        {"id":"lots","icon":"lot","title":"Lot sizes","subtitle":"How trade size is measured","body":"A standard lot is 100,000 units of the base currency. Mini (10,000) and micro (1,000) lots let you scale position size down — useful for controlling risk precisely."},
+        {"id":"leverage","icon":"leverage","title":"Leverage","subtitle":"Trading with borrowed exposure","body":"Leverage lets you control a large position with a small deposit (margin). It multiplies gains — and losses — equally, which is why sizing and stops matter more as leverage increases."},
+        {"id":"spread","icon":"spread","title":"Bid, ask & spread","subtitle":"The cost built into every trade","body":"The bid is what you can sell at, the ask is what you can buy at. The gap between them — the spread — is effectively the cost of entering a trade before it moves in your favor."}
+      ]
+    },
+    {
+      "id": "fundamentals",
+      "label": "Fundamentals",
+      "lessons": [
+        {"id":"long-short","icon":"longshort","title":"Long vs short","subtitle":"Profiting from rises or falls","body":"Buying (long) profits if the pair rises. Selling (short) profits if it falls. In forex you can do either just as easily — there's no extra step to \"short\" a currency."},
+        {"id":"support-resistance","icon":"supportresistance","title":"Support & resistance","subtitle":"Where price tends to react","body":"Price levels where buying or selling pressure has repeatedly shown up in the past. They're not exact lines — think of them as zones where reactions become more likely."},
+        {"id":"trend-range","icon":"trendrange","title":"Trend vs range","subtitle":"Going somewhere, or nowhere?","body":"A trending market makes higher highs and higher lows (or the reverse). A ranging market oscillates between a ceiling and a floor. Different conditions call for different approaches."},
+        {"id":"candlesticks","icon":"candlestick","title":"Reading candlesticks","subtitle":"Open, high, low, close at a glance","body":"Each candle shows four prices for a period: open, high, low and close. The body shows the open-to-close range; the wicks show how far price reached beyond that before pulling back."}
+      ]
+    },
+    {
+      "id": "risk",
+      "label": "Risk Management",
+      "lessons": [
+        {"id":"position-sizing","icon":"scale","title":"Position sizing","subtitle":"Size trades by risk, not confidence","body":"How much you trade should be set by how much you're willing to lose, not by how confident you feel. Fix your risk per trade first, then work backward to the position size."},
+        {"id":"risk-reward","icon":"riskreward","title":"Risk:reward ratio","subtitle":"What you risk vs what you stand to gain","body":"Compares what you stand to lose (distance to your stop) against what you stand to gain (distance to your target). A positive edge times a good ratio is what makes a strategy worth repeating."},
+        {"id":"stop-loss","icon":"shield","title":"Stop loss & take profit","subtitle":"Deciding your exit before you enter","body":"A stop loss caps what a trade can cost you if it goes wrong; a take profit locks in a target if it goes right. Setting both before entering removes emotion from the exit."},
+        {"id":"no-trade","icon":"brain","title":"Why \"no trade\" is a decision","subtitle":"Skipping a setup is still a skill","body":"Every setup you see isn't automatically worth acting on. Skilled traders pass on far more setups than they take — recognizing when not to act is a skill in itself."}
+      ]
+    },
+    {
+      "id": "advanced",
+      "label": "Advanced",
+      "lessons": [
+        {"id":"correlation","icon":"link","title":"Correlation between pairs","subtitle":"Some pairs move together","body":"Pairs that share a currency, like EUR/USD and GBP/USD, often move in similar directions. Trading several correlated pairs at once can multiply risk without you realizing it."},
+        {"id":"sessions","icon":"clock","title":"Trading sessions","subtitle":"Volatility changes by time of day","body":"The forex day is split into Asian, London and New York sessions. Volatility and spreads shift as sessions open, overlap and close — worth knowing before you set a stop."}
+      ]
+    },
+    {
+      "id": "next",
+      "label": "What next?",
+      "style": "next",
+      "lessons": [
+        {"id":"go-puzzles","icon":"target","title":"Puzzles","subtitle":"Exercise your decision-making","href":"index.html"},
+        {"id":"go-practice","icon":"flame","title":"Practice","subtitle":"Build a streak under pressure","href":"practice.html"},
+        {"id":"go-tools","icon":"wrench","title":"Tools","subtitle":"Calculators for sizing & risk","href":"tools.html"},
+        {"id":"go-community","icon":"people","title":"Community","subtitle":"See where you rank","href":"community.html"}
+      ]
+    }
+  ]
+}

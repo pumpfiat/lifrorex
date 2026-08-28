@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sessions — Liforex</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="tools">
+<header class="site-header"><a class="site-brand" href="index.html"><span class="mark">li</span>forex<span class="domain">.org</span></a><nav class="site-nav"><a href="practice.html" data-page="practice">Practice</a><a href="index.html" data-page="puzzles">Puzzles</a><a href="learn.html" data-page="learn">Learn</a><a href="community.html" data-page="community">Community</a><a href="tools.html" data-page="tools">Tools</a><a href="glossary.html" data-page="glossary">Glossary</a></nav><div class="site-actions"><a class="site-action" href="community.html"><span class="rating-label">Rating</span><span class="rating" id="ratingDisplay">1200</span></a></div></header>
+<main class="sessions-page">
+  <div class="page-heading"><div class="section-label">Tools / Sessions</div><h1>Forex market sessions.</h1><p>See when the major financial centers are open in your time zone.</p></div>
+  <section class="sessions-controls box"><div><label for="timezoneSelect">Your time zone</label><select id="timezoneSelect"></select></div><div class="session-clock"><span class="section-label">Local time</span><strong id="localClock">--:--:--</strong><span id="localDate">Loading...</span></div></section>
+  <section class="sessions-board box" aria-labelledby="timelineTitle"><div class="sessions-board-head"><div><h2 id="timelineTitle">Market hours</h2><p>Approximate 09:00–17:00 local hours for each financial center.</p></div><span class="session-note">Educational reference</span></div><div class="timeline" id="timeline"><div class="timeline-plot"><div class="timeline-hours" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div><div class="now-marker" id="nowMarker" aria-hidden="true"><span>NOW</span></div><div id="sessionRows"></div></div></div><div class="timeline-key"><span><i class="key-swatch open"></i>Open</span><span><i class="key-swatch overlap"></i>Overlap</span><span><i class="key-swatch closed"></i>Closed</span></div></section>
+  <section class="sessions-explainer"><h2>Why overlaps matter</h2><p>When two major centers are open at once, more participants are active and price can move faster. London and New York commonly overlap, but news and liquidity conditions can change the pace.</p></section>
+</main>
+<footer class="footer"><div class="footer-line"><span>Liforex · free forex learning &amp; practice</span><span>Educational content only</span></div></footer>
+<script src="js/main.js"></script><script src="js/sessions.js"></script>
+</body>
+</html>

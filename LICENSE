@@ -1,0 +1,24 @@
+GNU AFFERO GENERAL PUBLIC LICENSE, Version 3
+
+Liforex is licensed under the GNU Affero General Public License v3.0 (or any
+later version), the same license used by lichess-org/lila, because parts of
+this project's design (colors, typography, component shadows/spacing) were
+derived from lila's source. See ATTRIBUTION.md for exactly what was taken
+from where.
+
+--------------------------------------------------------------------------
+IMPORTANT: replace this file with the real license text before publishing.
+--------------------------------------------------------------------------
+
+Do NOT hand-copy the license text from memory or an AI-generated summary —
+legal documents need to be exact. Get the real text one of these ways:
+
+1. Easiest: when creating the GitHub repository, GitHub's own UI has an
+   "Add a license" step — choose "GNU Affero General Public License v3.0"
+   and GitHub writes the exact, correct, complete text into LICENSE for you
+   automatically. No copy-pasting needed.
+
+2. Or visit https://www.gnu.org/licenses/agpl-3.0.txt yourself in a browser
+   and save it as LICENSE in this folder.
+
+Either way takes under a minute and guarantees the text is correct.

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glossary — Liforex</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="glossary">
+<header class="site-header"><a class="site-brand" href="index.html"><span class="mark">li</span>forex<span class="domain">.org</span></a><nav class="site-nav"><a href="practice.html" data-page="practice">Practice</a><a href="index.html" data-page="puzzles">Puzzles</a><a href="learn.html" data-page="learn">Learn</a><a href="community.html" data-page="community">Community</a><a href="tools.html" data-page="tools">Tools</a><a href="glossary.html" data-page="glossary">Glossary</a></nav><div class="site-actions"><a class="site-action" href="community.html"><span class="rating-label">Rating</span><span class="rating" id="ratingDisplay">1200</span></a></div></header>
+<main class="glossary-page">
+  <section class="page-heading glossary-heading"><div class="section-label">Reference</div><h1>Forex Glossary</h1><p>Understand the language of forex.</p><span>Simple explanations of the terms, concepts, and tools you'll encounter while learning forex.</span></section>
+  <section class="glossary-controls" aria-label="Glossary controls">
+    <label class="glossary-search-label" for="glossarySearch">Search the glossary</label>
+    <div class="glossary-search-wrap"><input id="glossarySearch" type="search" placeholder="Search the glossary..." autocomplete="off"><button type="button" id="clearSearch" class="clear-search" aria-label="Clear search">×</button></div>
+    <nav class="glossary-tabs" id="categoryFilters" aria-label="Filter by category"></nav>
+    <nav class="alphabet-nav" id="alphabetNav" aria-label="Jump to letter"></nav>
+  </section>
+  <div class="glossary-layout"><section id="glossaryResults" aria-live="polite"></section><aside class="glossary-detail" id="termDetail" aria-live="polite"><div class="detail-empty"><span class="section-label">Term detail</span><h2>Select a term</h2><p>Choose a glossary entry to read its full explanation and related concepts.</p></div></aside></div>
+</main>
+<footer class="footer"><div class="footer-line"><span>Liforex · free forex learning &amp; practice</span><span>Educational content only</span></div></footer>
+<script src="js/main.js"></script><script src="js/diagrams.js"></script><script src="js/glossary.js"></script>
+</body>
+</html>
