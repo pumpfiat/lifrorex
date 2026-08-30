@@ -51,3 +51,30 @@ class CrawlResult:
 	started_at: datetime | None = None
 	finished_at: datetime | None = None
 	discovered_urls: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CrawlOperationResult:
+	start_url: str
+	canonical_url: str | None
+	policy: PolicyDecision | None
+	fetched: bool
+	fetch_result: CrawlResult | None
+	html_processed: bool
+	candidates: tuple[str, ...] = ()
+	duplicate_urls: tuple[str, ...] = ()
+	invalid_urls: tuple[str, ...] = ()
+	error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecursiveCrawlResult:
+	start_url: str
+	canonical_start_url: str | None
+	max_pages: int
+	page_results: tuple[CrawlOperationResult, ...]
+	policy_denied_urls: tuple[str, ...]
+	failed_urls: tuple[str, ...]
+	invalid_urls: tuple[str, ...]
+	duplicate_urls: tuple[str, ...]
+	limit_reached: bool

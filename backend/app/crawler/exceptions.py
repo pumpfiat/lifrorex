@@ -12,3 +12,7 @@ class PolicyError(CrawlerError):
 
 class DiscoveryError(CrawlerError):
 	"""Raised when future URL discovery cannot complete."""
+
+
+class UrlNormalizationError(CrawlerError):
+	"""Raised when a candidate URL cannot be normalized safely."""
