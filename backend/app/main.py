@@ -3,10 +3,12 @@ from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.sources import router as sources_router
 from app.db.database import get_db
 
 
 app = FastAPI()
+app.include_router(sources_router)
 
 
 @app.get("/")
