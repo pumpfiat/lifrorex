@@ -11,19 +11,18 @@ URL + Source
     ↓
 [1] Crawl (fetch HTML)
     ↓
-[2] Extract Content (clean HTML → text)
+[2] Extract Content + Metadata (clean HTML → text; title, description,
+    author, dates, canonical URL -- with JSON-LD > Open Graph > plain-tag
+    priority -- extracted as part of the same step)
     ↓
-[3] Extract Metadata (title, description, author, dates, canonical URL)
+[3] Classify (regulation, guidance, enforcement, etc.)
     ↓
-[4] Classify (regulation, guidance, enforcement, etc.)
+[4] Score Quality & Relevance (0-1 scores)
     ↓
-[5] Score Quality & Relevance (0-1 scores)
+[5] Fingerprint (SHA-256 of normalized content, for logging)
     ↓
-[6] Fingerprint (SHA-256 of normalized content)
-    ↓
-[7] Deduplication Check (fingerprint already exists?)
-    ↓
-[8] Persist to Database
+[6] Persist (create-or-return-existing decided atomically by the
+    database's own unique constraint, not a separate pre-check)
     ↓
 ProcessingResult (CREATED|DUPLICATE|FETCH_FAILED|...)
 ```
@@ -32,9 +31,17 @@ ProcessingResult (CREATED|DUPLICATE|FETCH_FAILED|...)
 
 ### Duplicate Detection
 - **Deterministic:** Same content always produces same fingerprint (SHA-256)
-- **Before Persist:** Checks for existing fingerprint before attempting insert
+- **Atomic, not check-then-act:** Insert is attempted directly; the
+  database's own unique constraint on `fingerprint` is the single source of
+  truth for whether something is a duplicate. An earlier version checked
+  for an existing fingerprint *before* attempting the insert, which is a
+  classic race under concurrent access -- two workers processing identical
+  content simultaneously could both pass the check before either had
+  actually inserted. See `DocumentRepository.upsert()` for the full
+  explanation.
 - **Status Returned:** Returns `DUPLICATE` status without creating new record
-- **Idempotent:** Processing same URL twice is safe
+- **Idempotent:** Processing the same URL twice is safe, including under
+  concurrent access now, not just sequential access.
 
 ### Error Handling
 - **Fetch Failures:** HTTP errors, timeouts, connection failures → `FETCH_FAILED`
@@ -90,18 +97,22 @@ class ProcessingResult:
 ## Component Integration
 
 - **Crawler:** Uses existing `SinglePageCrawlOrchestrator.crawl()`
-- **Extraction:** Uses existing `extract_document()` from Step 8B
-- **Metadata:** Uses existing `extract_metadata()` from Step 8C
-- **Classification:** Uses existing `classify_document()` from Step 8D
-- **Scoring:** Uses existing `score_document()` from Step 8E
-- **Fingerprinting:** Uses existing `fingerprint_document()` from Step 8F
-- **Persistence:** Uses existing `DocumentRepository.upsert()` from Step 8G
+- **Extraction + Metadata:** Uses existing `extract_document()`, which
+  applies metadata internally (JSON-LD > Open Graph > plain-tag priority)
+  as part of extraction -- not a separate pipeline step
+- **Classification:** Uses existing `classify_document()`
+- **Scoring:** Uses existing `score_document()`
+- **Fingerprinting:** Uses existing `fingerprint_document()`
+- **Persistence:** Uses existing `DocumentRepository.upsert()`, which
+  decides create-vs-duplicate atomically and reports which one happened
 
 **No duplication:** Pipeline only orchestrates; all logic is in existing components.
 
 ## Database Schema
 
-Uses existing Document table (Step 8G):
+Uses existing Document table (Postgres -- see `config.py` and the ARRAY/JSON
+column types on `Source`/`Document` for why this project targets Postgres
+specifically, not a generic SQL dialect):
 
 ```sql
 CREATE TABLE documents (
@@ -122,7 +133,11 @@ CREATE TABLE documents (
     fingerprint VARCHAR UNIQUE,  -- allows multiple NULLs
     fingerprint_version VARCHAR,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE (source_id, source_url)  -- added after the original migration;
+                                     -- previously nothing stopped the same
+                                     -- URL from being ingested twice as
+                                     -- separate rows
 );
 
 CREATE INDEX ix_documents_source_id ON documents(source_id);
@@ -148,11 +163,12 @@ pytest tests/ -v
 
 Pipeline logs at INFO level:
 - `Pipeline: crawling {url} from source {source_id}`
-- `Pipeline: extracting content from {url}`
-- `Pipeline: extracting metadata from {url}`
+- `Pipeline: extracting content from {url}` (metadata extraction happens
+  inside this same step now, no separate log line for it)
 - `Pipeline: classifying document from {url}`
 - `Pipeline: scoring document from {url}`
-- `Pipeline: generating fingerprint for {url}`
+- `Pipeline: fingerprint for {url} is {fingerprint}` (now logs the actual
+  computed value, not just that the step ran)
 - `Pipeline: persisting document from {url}`
 - `Pipeline: document created with id {id} from {url}` or
 - `Pipeline: duplicate document detected, existing id {id}`

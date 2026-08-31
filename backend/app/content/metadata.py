@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -17,36 +18,53 @@ class MetadataExtractor:
 			return {}
 
 		soup = BeautifulSoup(html, "html.parser")
-		metadata: dict[str, Any] = {
-			"title": self._extract_title(soup),
-			"description": self._extract_description(soup),
-			"canonical_url": self._extract_canonical_url(soup, source_url),
-			"author": self._extract_author(soup),
-			"published_at": self._extract_datetime(soup, "article:published_time"),
-			"modified_at": self._extract_datetime(soup, "article:modified_time"),
-			"metadata": {},
-		}
 
 		json_ld = self._extract_json_ld(soup)
-		if json_ld:
-			metadata["metadata"]["json_ld"] = json_ld
-			metadata = self._apply_json_ld_overrides(metadata, json_ld, source_url)
+		json_ld_fields = self._json_ld_fields(json_ld, source_url) if json_ld else {}
 
-		if metadata.get("title") is None:
-			fallback_title = self._extract_og_value(soup, "og:title")
-			if fallback_title:
-				metadata["title"] = fallback_title
+		# Explicit priority: JSON-LD structured data first (deliberately
+		# curated by the publisher for machine consumption), then Open Graph
+		# (meant for rich sharing previews, usually clean), then the plain
+		# <title>/<meta name="description"> tags last -- these are often
+		# polluted with a site-name suffix ("Page Title | Site Name") or are
+		# just less reliable than the other two sources when they're present.
+		# Previously each source was applied in sequence with an "only if
+		# still unset" check, but the plain-tag values were computed and
+		# assigned first, so they always won by default regardless of
+		# whether a better JSON-LD or OG value existed.
+		title = (
+			json_ld_fields.get("title")
+			or self._extract_og_value(soup, "og:title")
+			or self._extract_title(soup)
+		)
+		description = (
+			json_ld_fields.get("description")
+			or self._extract_og_value(soup, "og:description")
+			or self._extract_description(soup)
+		)
+		og_url = self._extract_og_value(soup, "og:url")
+		canonical_url = (
+			json_ld_fields.get("canonical_url")
+			or (self._resolve_url(og_url, source_url) if og_url else None)
+			or self._extract_canonical_url(soup, source_url)
+		)
+		author = json_ld_fields.get("author") or self._extract_author(soup)
+		published_at = json_ld_fields.get("published_at") or self._extract_datetime(
+			soup, "article:published_time"
+		)
+		modified_at = json_ld_fields.get("modified_at") or self._extract_datetime(
+			soup, "article:modified_time"
+		)
 
-		if metadata.get("description") is None:
-			fallback_description = self._extract_og_value(soup, "og:description")
-			if fallback_description:
-				metadata["description"] = fallback_description
-
-		if metadata.get("canonical_url") is None:
-			fallback_canonical = self._extract_og_value(soup, "og:url")
-			if fallback_canonical:
-				metadata["canonical_url"] = self._resolve_url(fallback_canonical, source_url)
-
+		metadata: dict[str, Any] = {
+			"title": title,
+			"description": description,
+			"canonical_url": canonical_url,
+			"author": author,
+			"published_at": published_at,
+			"modified_at": modified_at,
+			"metadata": {"json_ld": json_ld} if json_ld else {},
+		}
 		return {key: value for key, value in metadata.items() if value is not None}
 
 	@staticmethod
@@ -135,13 +153,19 @@ class MetadataExtractor:
 			return None
 		for candidate in (text, text.replace("Z", "+00:00")):
 			try:
-				parsed = datetime.fromisoformat(candidate)
+				return datetime.fromisoformat(candidate)
 			except ValueError:
 				continue
-			if parsed.tzinfo is None:
-				return parsed.replace(tzinfo=None)
-			return parsed.astimezone()
-		return None
+		# ISO-8601 didn't match -- try RFC 2822 ("Mon, 15 Jan 2024 10:00:00
+		# GMT"), which is common in feed-adjacent meta tags even outside
+		# actual RSS/Atom documents. Uses the stdlib parser, no new
+		# dependency. Previously any non-ISO date silently returned None
+		# here, quietly losing publish dates on a real subset of sources.
+		try:
+			parsed = parsedate_to_datetime(text)
+		except (TypeError, ValueError):
+			return None
+		return parsed
 
 	@staticmethod
 	def _extract_og_value(soup: BeautifulSoup, property_name: str) -> str | None:
@@ -171,42 +195,42 @@ class MetadataExtractor:
 		return candidates
 
 	@staticmethod
-	def _apply_json_ld_overrides(metadata: dict[str, Any], candidate: Any, source_url: str) -> dict[str, Any]:
-		items: list[Any] = []
-		if isinstance(candidate, list):
-			items.extend(candidate)
-		else:
-			items.append(candidate)
+	def _json_ld_fields(candidate: Any, source_url: str) -> dict[str, Any]:
+		"""Extract title/description/author/dates/canonical_url from JSON-LD,
+		if present. Within JSON-LD itself, first object found wins for each
+		field (reasonable -- multiple JSON-LD blocks describing the same page
+		are rare). Returns only the fields actually found; the caller decides
+		priority against other sources (Open Graph, plain tags)."""
+		items: list[Any] = candidate if isinstance(candidate, list) else [candidate]
+		fields: dict[str, Any] = {}
 
 		for item in items:
 			for obj in MetadataExtractor._iter_json_ld_objects(item):
-				title_value = None
-				for key in ("headline", "name"):
-					value = obj.get(key)
-					if value:
-						title_value = MetadataExtractor._normalize_text(str(value))
-						break
-				if title_value and metadata.get("title") is None:
-					metadata["title"] = title_value
-				if "description" in obj and metadata.get("description") is None:
-					metadata["description"] = MetadataExtractor._normalize_text(str(obj["description"]))
-				if "author" in obj and metadata.get("author") is None:
+				if "title" not in fields:
+					for key in ("headline", "name"):
+						value = obj.get(key)
+						if value:
+							fields["title"] = MetadataExtractor._normalize_text(str(value))
+							break
+				if "description" not in fields and obj.get("description"):
+					fields["description"] = MetadataExtractor._normalize_text(str(obj["description"]))
+				if "author" not in fields and "author" in obj:
 					author = MetadataExtractor._extract_json_ld_author(obj["author"])
 					if author:
-						metadata["author"] = author
-				if "datePublished" in obj and metadata.get("published_at") is None:
+						fields["author"] = author
+				if "published_at" not in fields and obj.get("datePublished"):
 					parsed = MetadataExtractor._parse_datetime(str(obj["datePublished"]))
 					if parsed is not None:
-						metadata["published_at"] = parsed
-				if "dateModified" in obj and metadata.get("modified_at") is None:
+						fields["published_at"] = parsed
+				if "modified_at" not in fields and obj.get("dateModified"):
 					parsed = MetadataExtractor._parse_datetime(str(obj["dateModified"]))
 					if parsed is not None:
-						metadata["modified_at"] = parsed
-				if "url" in obj and metadata.get("canonical_url") is None:
+						fields["modified_at"] = parsed
+				if "canonical_url" not in fields and obj.get("url"):
 					candidate_url = MetadataExtractor._resolve_url(str(obj["url"]), source_url)
 					if candidate_url:
-						metadata["canonical_url"] = candidate_url
-		return metadata
+						fields["canonical_url"] = candidate_url
+		return fields
 
 	@staticmethod
 	def _iter_json_ld_objects(value: Any) -> Iterable[Mapping[str, Any]]:

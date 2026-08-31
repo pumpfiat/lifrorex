@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
@@ -115,6 +116,75 @@ def test_list_sources_returns_empty_list() -> None:
 
 	assert response.status_code == 200
 	assert response.json() == []
+
+
+def test_list_sources_accepts_default_pagination() -> None:
+	# No limit/offset supplied -- should behave exactly as before pagination
+	# was added (default limit=100 comfortably covers this single-source
+	# fixture, offset=0 starts from the beginning).
+	now = datetime.now(timezone.utc)
+	source = Source(
+		id=1, name="CFTC", url="https://www.cftc.gov/", categories=["forex"],
+		trust_level="primary", license="government", crawl_allowed=False,
+		active=True, created_at=now, updated_at=now,
+	)
+	app.dependency_overrides[get_db] = lambda: SourceSession([source])
+	try:
+		response = TestClient(app).get("/sources")
+	finally:
+		app.dependency_overrides.clear()
+
+	assert response.status_code == 200
+	assert len(response.json()) == 1
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_list_sources_rejects_non_positive_limit(limit: int) -> None:
+	app.dependency_overrides[get_db] = lambda: SourceSession([])
+	try:
+		response = TestClient(app).get("/sources", params={"limit": limit})
+	finally:
+		app.dependency_overrides.clear()
+
+	assert response.status_code == 422
+
+
+def test_list_sources_rejects_limit_above_maximum() -> None:
+	app.dependency_overrides[get_db] = lambda: SourceSession([])
+	try:
+		response = TestClient(app).get("/sources", params={"limit": 1001})
+	finally:
+		app.dependency_overrides.clear()
+
+	assert response.status_code == 422
+
+
+def test_list_sources_rejects_negative_offset() -> None:
+	app.dependency_overrides[get_db] = lambda: SourceSession([])
+	try:
+		response = TestClient(app).get("/sources", params={"offset": -1})
+	finally:
+		app.dependency_overrides.clear()
+
+	assert response.status_code == 422
+
+
+def test_list_sources_accepts_valid_pagination_params() -> None:
+	# NOTE: SourceSession.scalars() ignores the statement it's given
+	# entirely and always returns every source regardless of limit/offset
+	# (see the class definition above) -- so this only confirms valid
+	# limit/offset values are accepted (200, not 422), NOT that the
+	# response is actually correctly limited/offset. Verifying real
+	# LIMIT/OFFSET application requires a real database session, the way
+	# tests/content/test_document_repository.py uses an actual SQLite
+	# engine instead of a hand-rolled fake.
+	app.dependency_overrides[get_db] = lambda: SourceSession([])
+	try:
+		response = TestClient(app).get("/sources", params={"limit": 10, "offset": 5})
+	finally:
+		app.dependency_overrides.clear()
+
+	assert response.status_code == 200
 
 
 def test_get_source_returns_cftc() -> None:

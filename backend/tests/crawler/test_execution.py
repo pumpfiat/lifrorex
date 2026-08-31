@@ -132,3 +132,44 @@ def test_max_pages_must_be_positive() -> None:
 	executor, _, _, _ = make_executor({}, 1)
 	with pytest.raises(ValueError, match="max_pages must be positive"):
 		BoundedCrawlExecutor(executor.page_orchestrator, max_pages=0)
+
+
+def test_max_depth_must_be_non_negative() -> None:
+	executor, _, _, _ = make_executor({}, 1)
+	with pytest.raises(ValueError, match="max_depth must be non-negative"):
+		BoundedCrawlExecutor(executor.page_orchestrator, max_depth=-1)
+
+
+def test_max_depth_none_is_unlimited_default_behavior() -> None:
+	# max_depth defaults to None (unlimited) -- previously the only way
+	# BoundedCrawlExecutor worked, and should remain unchanged for anyone
+	# not explicitly opting into depth limiting.
+	graph = {"https://example.com/": ("https://example.com/b",), "https://example.com/b": ("https://example.com/c",), "https://example.com/c": ()}
+	executor, fetcher, _, _ = make_executor(graph, max_pages=10)
+	executor.crawl(Source(), "https://example.com/")
+	assert fetcher.calls == ["https://example.com/", "https://example.com/b", "https://example.com/c"]
+
+
+def test_max_depth_stops_following_links_beyond_the_limit() -> None:
+	# start (depth 0) -> b, c (depth 1) -> d, e (depth 2)
+	graph = {
+		"https://example.com/": ("https://example.com/b", "https://example.com/c"),
+		"https://example.com/b": ("https://example.com/d",),
+		"https://example.com/c": ("https://example.com/e",),
+		"https://example.com/d": (),
+		"https://example.com/e": (),
+	}
+	executor, fetcher, _, _ = make_executor(graph, max_pages=10)
+	depth_limited = BoundedCrawlExecutor(executor.page_orchestrator, max_pages=10, max_depth=1)
+	depth_limited.crawl(Source(), "https://example.com/")
+	assert fetcher.calls == ["https://example.com/", "https://example.com/b", "https://example.com/c"]
+	assert "https://example.com/d" not in fetcher.calls
+	assert "https://example.com/e" not in fetcher.calls
+
+
+def test_max_depth_zero_fetches_only_the_start_url() -> None:
+	graph = {"https://example.com/": ("https://example.com/b",), "https://example.com/b": ()}
+	executor, fetcher, _, _ = make_executor(graph, max_pages=10)
+	depth_limited = BoundedCrawlExecutor(executor.page_orchestrator, max_pages=10, max_depth=0)
+	depth_limited.crawl(Source(), "https://example.com/")
+	assert fetcher.calls == ["https://example.com/"]

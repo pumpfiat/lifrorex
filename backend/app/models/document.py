@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+	JSON,
 	DateTime,
 	ForeignKey,
 	Index,
@@ -10,7 +11,6 @@ from sqlalchemy import (
 	UniqueConstraint,
 	func,
 )
-from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -58,4 +58,10 @@ class Document(Base):
 	__table_args__ = (
 		Index("ix_documents_source_id", "source_id"),
 		Index("ix_documents_fingerprint", "fingerprint"),
+		# Was imported but never applied -- nothing previously stopped the same
+		# URL from being ingested twice as separate rows. The fingerprint
+		# unique constraint doesn't cover this: it only catches duplicates
+		# once content has been fetched and fingerprinted, not a re-crawl of
+		# the same URL before that point.
+		UniqueConstraint("source_id", "source_url", name="uq_documents_source_id_source_url"),
 	)

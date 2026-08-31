@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -86,9 +86,30 @@ class DocumentRepository:
 		stmt = select(DocumentModel).where(DocumentModel.fingerprint == fingerprint)
 		return self.session.scalars(stmt).first()
 
-	def get_all_by_source(self, source_id: int) -> list[DocumentModel]:
-		"""Retrieve all documents from a given source."""
-		stmt = select(DocumentModel).where(DocumentModel.source_id == source_id)
+	def get_all_by_source(
+		self, source_id: int, limit: int = 100, offset: int = 0
+	) -> list[DocumentModel]:
+		"""Retrieve documents from a given source, paginated.
+
+		Previously unbounded -- loaded every document from a source into
+		memory in one query regardless of how many existed. At real volume
+		("a lot of different documents") this would eventually mean loading
+		an entire source's full document content into memory at once.
+		Callers expecting literally every document should page through
+		results (increasing offset) rather than assume this returns
+		everything in one call.
+		"""
+		if limit <= 0:
+			raise ValueError("limit must be positive")
+		if offset < 0:
+			raise ValueError("offset must be non-negative")
+		stmt = (
+			select(DocumentModel)
+			.where(DocumentModel.source_id == source_id)
+			.order_by(DocumentModel.id)
+			.limit(limit)
+			.offset(offset)
+		)
 		return list(self.session.scalars(stmt).all())
 
 	def update(
@@ -150,31 +171,66 @@ class DocumentRepository:
 		self,
 		document: PydanticDocument,
 		source_id: int,
-	) -> DocumentModel:
+	) -> tuple[DocumentModel, bool]:
 		"""
 		Insert a document, or return the existing one if a duplicate fingerprint exists.
 
-		If fingerprint is 'empty' or None, always creates a new document.
+		Returns (document, created) -- created is True if a new row was
+		inserted, False if an existing document with the same fingerprint was
+		found and returned instead.
+
+		If fingerprint is 'empty' or None, always creates a new document (no
+		exact-fingerprint deduplication is possible for content-less
+		documents).
+
+		Insert-first, not check-then-insert: previously this called
+		get_by_fingerprint() to check for an existing row BEFORE attempting
+		the insert -- a check-then-act race under concurrent access. Two
+		workers processing identical content simultaneously could both pass
+		the check before either had actually inserted, and the second
+		worker's insert would then hit the unique constraint and raise
+		IntegrityError, which the caller (the processing pipeline) would
+		incorrectly report as a hard failure instead of the correct "this is
+		a duplicate" outcome. This version lets the database's own unique
+		constraint be the single source of truth: attempt the insert
+		directly, and only on an actual conflict, look up what's already
+		there. This also removes what used to be a redundant duplicate
+		lookup -- callers no longer need their own separate pre-check just to
+		learn whether the result was new or existing; this return value tells
+		them directly.
 
 		Args:
 			document: Pydantic Document
 			source_id: Source ID for the document
 
 		Returns:
-			Persisted DocumentModel
+			(document, created) tuple
 
 		Raises:
-			IntegrityError: If unique constraints fail for non-fingerprint reasons
+			IntegrityError: If a unique constraint fails for a reason OTHER
+				than the fingerprint (e.g. a duplicate source_id+source_url)
+				-- that's a genuine failure, not a duplicate, and is
+				re-raised so it surfaces as one rather than being silently
+				treated as a successful duplicate match.
 		"""
 		fingerprint = fingerprint_document(document)
 
-		if fingerprint != "empty" and fingerprint is not None:
-			existing = self.get_by_fingerprint(fingerprint)
-			if existing is not None:
-				return existing
-
-		# No existing document with this fingerprint, create new
-		return self.create(document, source_id)
+		try:
+			created_doc = self.create(document, source_id)
+			return created_doc, True
+		except IntegrityError:
+			# create() already rolled back the session before re-raising, so
+			# the session is clean and usable for the lookup below.
+			if fingerprint != "empty" and fingerprint is not None:
+				existing = self.get_by_fingerprint(fingerprint)
+				if existing is not None:
+					return existing, False
+			# Either there's no fingerprint to deduplicate on, or a document
+			# with this exact fingerprint genuinely doesn't exist -- the
+			# conflict was caused by something else (e.g. source_id +
+			# source_url). That's a real failure, not a duplicate; let the
+			# caller see it rather than silently swallowing it.
+			raise
 
 	def delete(self, document_id: int) -> bool:
 		"""
@@ -193,13 +249,20 @@ class DocumentRepository:
 
 	def count(self) -> int:
 		"""Return total number of documents."""
-		stmt = select(DocumentModel)
-		return len(self.session.scalars(stmt).all())
+		# Previously: select(DocumentModel) then len(...all()) -- loaded
+		# every row's full content into memory just to return a number. At
+		# real volume this is a genuine scalability failure, not a style nit.
+		stmt = select(func.count()).select_from(DocumentModel)
+		return self.session.scalar(stmt) or 0
 
 	def count_by_source(self, source_id: int) -> int:
 		"""Return number of documents from a given source."""
-		stmt = select(DocumentModel).where(DocumentModel.source_id == source_id)
-		return len(self.session.scalars(stmt).all())
+		stmt = (
+			select(func.count())
+			.select_from(DocumentModel)
+			.where(DocumentModel.source_id == source_id)
+		)
+		return self.session.scalar(stmt) or 0
 
 
 __all__ = ["DocumentRepository"]

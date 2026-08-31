@@ -85,6 +85,28 @@ def test_robots_failures_have_explicit_outcomes(
 	assert decision.reason is reason
 
 
+def test_http_to_https_redirect_on_same_host_is_not_cross_origin() -> None:
+	# Regression test: a source registered as http://... whose site (like
+	# almost all real .gov/.edu sites today) redirects everything to https
+	# previously had every fetch rejected as CROSS_ORIGIN purely because the
+	# scheme changed, even though it's genuinely the same site.
+	policy, retriever = make_policy("User-agent: *\nAllow: /\n")
+	decision = policy.evaluate(PolicySource(url="http://unit.test/source/path"), "https://unit.test/page")
+	assert decision.outcome is PolicyOutcome.ALLOWED
+	assert decision.reason is PolicyReason.ROBOTS_ALLOWED
+
+
+def test_different_explicit_port_on_same_host_is_still_cross_origin() -> None:
+	# A genuinely different port is a real signal of a different service,
+	# not just a scheme upgrade -- this should NOT be treated as same-site.
+	policy, retriever = make_policy("User-agent: *\nAllow: /\n")
+	decision = policy.evaluate(
+		PolicySource(url="http://unit.test:8080/source/path"), "https://unit.test/page"
+	)
+	assert decision.outcome is PolicyOutcome.DISALLOWED
+	assert decision.reason is PolicyReason.CROSS_ORIGIN
+
+
 @pytest.mark.parametrize(
 	("url", "reason"),
 	[

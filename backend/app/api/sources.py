@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -65,8 +65,18 @@ def archive_source(id: int, db: Session = Depends(get_db)) -> Source:
 
 
 @router.get("/sources", response_model=list[SourceResponse])
-def list_sources(db: Session = Depends(get_db)) -> list[Source]:
-	return list(db.scalars(select(Source).order_by(Source.id)).all())
+def list_sources(
+	limit: int = Query(default=100, gt=0, le=1000),
+	offset: int = Query(default=0, ge=0),
+	db: Session = Depends(get_db),
+) -> list[Source]:
+	# Previously unbounded -- returned every source in one response
+	# regardless of how many existed. Same fix as
+	# DocumentRepository.get_all_by_source() in Step 5. gt=0/le=1000 and
+	# ge=0 give FastAPI's own request validation (422 on violation) instead
+	# of hand-rolled checks.
+	stmt = select(Source).order_by(Source.id).limit(limit).offset(offset)
+	return list(db.scalars(stmt).all())
 
 
 @router.get("/sources/{id}", response_model=SourceResponse)

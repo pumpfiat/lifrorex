@@ -124,11 +124,92 @@ def test_fetch_rejects_oversized_response_before_reading_content() -> None:
 	assert result.response_size == 11
 
 
+def test_fetch_does_not_retry_by_default() -> None:
+	# max_retries defaults to 0 -- previous behavior, preserved unless a
+	# caller explicitly opts in.
+	call_count = {"n": 0}
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		call_count["n"] += 1
+		return httpx.Response(500, content=b"failure", request=request)
+
+	result = make_fetcher(handler).fetch("https://unit.test/failure")
+
+	assert call_count["n"] == 1
+	assert result.succeeded is False
+
+
+def test_fetch_retries_transient_failures_and_eventually_succeeds() -> None:
+	call_count = {"n": 0}
+	sleeps: list[float] = []
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		call_count["n"] += 1
+		if call_count["n"] < 3:
+			return httpx.Response(503, content=b"unavailable", request=request)
+		return httpx.Response(200, content=b"ok", request=request)
+
+	fetcher = make_fetcher(
+		handler, max_retries=3, backoff_base_seconds=0.01, sleep_fn=sleeps.append
+	)
+	result = fetcher.fetch("https://unit.test/flaky")
+
+	assert call_count["n"] == 3
+	assert result.succeeded is True
+	assert result.content == b"ok"
+	assert len(sleeps) == 2  # two retries before the third (successful) attempt
+
+
+def test_fetch_does_not_retry_client_errors_other_than_429() -> None:
+	call_count = {"n": 0}
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		call_count["n"] += 1
+		return httpx.Response(404, content=b"missing", request=request)
+
+	fetcher = make_fetcher(handler, max_retries=3, backoff_base_seconds=0.01, sleep_fn=lambda s: None)
+	result = fetcher.fetch("https://unit.test/missing")
+
+	assert call_count["n"] == 1
+	assert result.outcome is CrawlOutcome.NOT_FOUND
+
+
+def test_fetch_respects_retry_after_header_over_computed_backoff() -> None:
+	sleeps: list[float] = []
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		return httpx.Response(429, headers={"retry-after": "5"}, content=b"slow down", request=request)
+
+	fetcher = make_fetcher(
+		handler, max_retries=1, backoff_base_seconds=0.01, sleep_fn=sleeps.append
+	)
+	fetcher.fetch("https://unit.test/limited")
+
+	assert sleeps == [5.0]
+
+
+def test_fetch_rate_limits_repeated_requests_to_the_same_host() -> None:
+	sleeps: list[float] = []
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		return httpx.Response(200, content=b"ok", request=request)
+
+	fetcher = make_fetcher(handler, min_request_interval_seconds=2.0, sleep_fn=sleeps.append)
+	fetcher.fetch("https://unit.test/a")
+	fetcher.fetch("https://unit.test/b")
+
+	assert len(sleeps) == 1
+	assert sleeps[0] > 0
+
+
 @pytest.mark.parametrize(
 	("constructor_arguments", "message"),
 	[
 		({"timeout_seconds": 0}, "timeout_seconds must be positive"),
 		({"max_response_size": 0}, "max_response_size must be positive"),
+		({"max_retries": -1}, "max_retries must be non-negative"),
+		({"backoff_base_seconds": -1}, "backoff_base_seconds must be non-negative"),
+		({"min_request_interval_seconds": -1}, "min_request_interval_seconds must be non-negative"),
 	],
 )
 def test_fetcher_rejects_invalid_limits(
