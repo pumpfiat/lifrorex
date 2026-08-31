@@ -1,5 +1,7 @@
+import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -10,27 +12,107 @@ from app.crawler.types import CRAWLER_USER_AGENT, CrawlOutcome
 class HttpFetcher:
 	DEFAULT_TIMEOUT_SECONDS = 10.0
 	DEFAULT_MAX_RESPONSE_SIZE = 10 * 1024 * 1024
+	# Retries and rate-limiting default to OFF (0). Previously there was no
+	# retry/backoff and no throttling at all -- a single transient timeout
+	# gave up permanently, and nothing stopped hammering a host with rapid
+	# sequential requests. The capability is added here, but defaults are
+	# conservative so existing callers (and existing tests, several of which
+	# call fetch() once and expect exactly one result with no delay) see no
+	# behavior change unless a caller explicitly opts in with a positive
+	# max_retries / min_request_interval_seconds. Whoever wires up the real
+	# crawl process should pass explicit non-zero values -- e.g. max_retries=2,
+	# min_request_interval_seconds=1.0 -- to actually get the benefit.
+	DEFAULT_MAX_RETRIES = 0
+	DEFAULT_BACKOFF_BASE_SECONDS = 1.0
+	DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.0
 	USER_AGENT = CRAWLER_USER_AGENT
+
+	# 429/503 are classic "try again shortly" signals; other 5xx are often
+	# transient too. 4xx other than 429 (e.g. 403, 404) are deliberately not
+	# retried -- retrying won't fix a genuine client-side error or block.
+	RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 	def __init__(
 		self,
 		source_id: int,
 		timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 		max_response_size: int = DEFAULT_MAX_RESPONSE_SIZE,
+		max_retries: int = DEFAULT_MAX_RETRIES,
+		backoff_base_seconds: float = DEFAULT_BACKOFF_BASE_SECONDS,
+		min_request_interval_seconds: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
 		transport: httpx.BaseTransport | None = None,
+		sleep_fn=time.sleep,
 	) -> None:
 		if timeout_seconds <= 0:
 			raise ValueError("timeout_seconds must be positive")
 		if max_response_size <= 0:
 			raise ValueError("max_response_size must be positive")
+		if max_retries < 0:
+			raise ValueError("max_retries must be non-negative")
+		if backoff_base_seconds < 0:
+			raise ValueError("backoff_base_seconds must be non-negative")
+		if min_request_interval_seconds < 0:
+			raise ValueError("min_request_interval_seconds must be non-negative")
 
 		self.source_id = source_id
 		self.timeout_seconds = timeout_seconds
 		self.max_response_size = max_response_size
+		self.max_retries = max_retries
+		self.backoff_base_seconds = backoff_base_seconds
+		self.min_request_interval_seconds = min_request_interval_seconds
 		self.transport = transport
+		self._sleep = sleep_fn
+		# Per-host last-request timestamp, for the rate-limit throttle below.
+		# Lives for the lifetime of this fetcher instance -- typically one
+		# crawl run reuses a single fetcher across many fetch() calls.
+		self._last_request_at: dict[str, float] = {}
 
 	def fetch(self, url: str) -> CrawlResult:
 		started_at = datetime.now(timezone.utc)
+		result: CrawlResult
+		for attempt in range(self.max_retries + 1):
+			self._respect_rate_limit(url)
+			result = self._fetch_once(url, started_at)
+			if result.succeeded or not self._is_retryable(result):
+				return result
+			if attempt < self.max_retries:
+				delay = self.backoff_base_seconds * (2 ** attempt)
+				retry_after = self._retry_after_seconds(result)
+				if retry_after is not None:
+					delay = max(delay, retry_after)
+				self._sleep(delay)
+		return result
+
+	def _is_retryable(self, result: CrawlResult) -> bool:
+		if result.outcome in (CrawlOutcome.TIMEOUT, CrawlOutcome.CONNECTION_ERROR):
+			return True
+		return result.http_status is not None and result.http_status in self.RETRYABLE_STATUS_CODES
+
+	@staticmethod
+	def _retry_after_seconds(result: CrawlResult) -> float | None:
+		value = result.response_headers.get("retry-after") if result.response_headers else None
+		if value is None:
+			return None
+		try:
+			return float(value)
+		except ValueError:
+			return None
+
+	def _respect_rate_limit(self, url: str) -> None:
+		if self.min_request_interval_seconds <= 0:
+			return
+		host = urlsplit(url).hostname
+		if host is None:
+			return
+		now = time.monotonic()
+		last = self._last_request_at.get(host)
+		if last is not None:
+			wait = self.min_request_interval_seconds - (now - last)
+			if wait > 0:
+				self._sleep(wait)
+		self._last_request_at[host] = time.monotonic()
+
+	def _fetch_once(self, url: str, started_at: datetime) -> CrawlResult:
 		try:
 			with httpx.Client(
 				timeout=self.timeout_seconds,

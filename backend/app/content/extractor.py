@@ -23,8 +23,12 @@ class HtmlContentExtractor:
 		for tag_name in self._IGNORED_TAGS:
 			for tag in soup.find_all(tag_name):
 				tag.decompose()
-			for comment in soup.find_all(string=lambda value: isinstance(value, Comment)):
-				comment.extract()
+		# Was nested inside the tag-name loop above, re-scanning the whole
+		# document for comments once per ignored tag name (8x redundant work
+		# per document). Comments only need removing once, after all ignored
+		# tags are gone.
+		for comment in soup.find_all(string=lambda value: isinstance(value, Comment)):
+			comment.extract()
 
 		text = "\n\n".join(part.strip() for part in soup.stripped_strings if part.strip())
 		text = re.sub(r"\n\s*\n+", "\n\n", text)
@@ -57,7 +61,10 @@ class HtmlContentExtractor:
 		html: str | None = None,
 	) -> Document:
 		normalized_content_type = content_type.split(";", maxsplit=1)[0].strip().lower() if content_type else None
-		if normalized_content_type is not None and normalized_content_type != "text/html":
+		# application/xhtml+xml is real, valid, well-formed HTML that
+		# BeautifulSoup parses fine -- previously only exact "text/html" was
+		# accepted, silently dropping any site serving XHTML.
+		if normalized_content_type is not None and normalized_content_type not in {"text/html", "application/xhtml+xml"}:
 			return Document(
 				source_id=source_id,
 				source_url=source_url,
@@ -70,7 +77,6 @@ class HtmlContentExtractor:
 			)
 
 		try:
-			title = self.extract_title(html)
 			content = self.extract(html)
 			extraction_status = ExtractionStatus.SUCCESS
 		except Exception:
@@ -85,11 +91,17 @@ class HtmlContentExtractor:
 				metadata={"reason": "html_extraction_failed"},
 			)
 
+		# title is intentionally left unset here (not pulled from the plain
+		# <title> tag) so MetadataExtractor.extract_document_metadata below
+		# -- which prioritizes JSON-LD / Open Graph over a plain <title> tag
+		# that's often polluted with a site-name suffix -- gets first say.
+		# Previously this method set title from the plain tag immediately,
+		# which meant the "only fill if still None" merge in metadata
+		# extraction could never actually override it with anything better.
 		document = Document(
 			source_id=source_id,
 			source_url=source_url,
 			canonical_url=canonical_url,
-			title=title,
 			content=content,
 			content_type=content_type or "text/html",
 			http_status=http_status,

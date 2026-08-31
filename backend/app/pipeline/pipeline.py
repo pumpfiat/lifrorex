@@ -9,17 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.content import (
-	Document,
 	ExtractionStatus,
 	classify_document,
 	extract_document,
-	extract_metadata,
 	fingerprint_document,
 	score_document,
 )
-from app.crawler.models import CrawlOperationResult
 from app.crawler.orchestrator import SinglePageCrawlOrchestrator
-from app.crawler.interfaces import CrawlSource
 from app.models.source import Source as SourceModel
 from app.services.document_repository import DocumentRepository
 
@@ -85,13 +81,19 @@ class DocumentProcessingPipeline:
 
 		Flow:
 		1. Crawl the URL
-		2. Extract content
-		3. Extract metadata
-		4. Classify document
-		5. Score quality and relevance
-		6. Generate fingerprint
-		7. Check for duplicates
-		8. Persist to database
+		2. Extract content (metadata -- title, description, author, dates,
+		   canonical URL -- is extracted as part of this step; see
+		   extract_document(), which already applies JSON-LD/Open-Graph/
+		   plain-tag priority internally. A separate metadata-extraction pass
+		   used to run again here, redundantly re-parsing the same HTML for
+		   values that were already set)
+		3. Classify document
+		4. Score quality and relevance
+		5. Generate fingerprint (for logging/observability)
+		6. Persist to database (create-vs-duplicate is now decided
+		   atomically inside upsert() -- a separate duplicate-check step used
+		   to run first, which was both redundant and a race under
+		   concurrent access; see document_repository.py's upsert())
 
 		Args:
 			source: Source record (must exist in database)
@@ -168,35 +170,30 @@ class DocumentProcessingPipeline:
 				document_source_url=fetched_url,
 			)
 
-		# Step 3: Extract metadata and merge into document
-		logger.info(f"Pipeline: extracting metadata from {fetched_url}")
-		try:
-			metadata_dict = extract_metadata(fetched_content_html, fetched_url)
-			# Apply metadata fields to document
-			if "title" in metadata_dict and extracted_doc.title is None:
-				extracted_doc.title = metadata_dict["title"]
-			if "description" in metadata_dict and extracted_doc.description is None:
-				extracted_doc.description = metadata_dict["description"]
-			if "author" in metadata_dict and extracted_doc.author is None:
-				extracted_doc.author = metadata_dict["author"]
-			if "published_at" in metadata_dict and extracted_doc.published_at is None:
-				extracted_doc.published_at = metadata_dict["published_at"]
-			if "modified_at" in metadata_dict and extracted_doc.modified_at is None:
-				extracted_doc.modified_at = metadata_dict["modified_at"]
-			if "canonical_url" in metadata_dict:
-				extracted_doc.canonical_url = metadata_dict["canonical_url"]
-		except Exception as e:
-			logger.error(f"Pipeline: metadata extraction failed for {fetched_url}: {e}")
-			# Metadata extraction failure is not fatal; continue with extracted doc
-
-		# Step 4: Classify
+		# Step 3: Classify
+		# extract_document() in Step 2 already applied metadata (title,
+		# description, author, dates, canonical_url) with correct
+		# JSON-LD/Open-Graph/plain-tag priority. A separate metadata
+		# extraction pass used to run here -- re-parsing the exact same HTML
+		# with BeautifulSoup a second time, recomputing values that were
+		# already set -- purely wasted work on every single document, since
+		# every "if still None" check could never find anything new the
+		# second time around. Removed rather than left as dead work.
 		logger.info(f"Pipeline: classifying document from {fetched_url}")
-		classification = classify_document(extracted_doc)
-		if classification:
-			extracted_doc.metadata["classification"] = classification.document_type
-			extracted_doc.metadata["classification_confidence"] = classification.confidence.value
+		try:
+			classification = classify_document(extracted_doc)
+			if classification:
+				extracted_doc.metadata["classification"] = classification.document_type
+				extracted_doc.metadata["classification_confidence"] = classification.confidence.value
+		except Exception as e:
+			logger.error(f"Pipeline: classification failed for {fetched_url}: {e}")
+			# Classification failure is not fatal; continue without it.
+			# Previously this step had no try/except at all, unlike its
+			# neighbors (metadata extraction, scoring) which both degrade
+			# gracefully -- an unexpected error here would have crashed the
+			# whole process_url() call for that URL instead of continuing.
 
-		# Step 5: Score quality and relevance
+		# Step 4: Score quality and relevance
 		logger.info(f"Pipeline: scoring document from {fetched_url}")
 		try:
 			scores = score_document(extracted_doc)
@@ -211,42 +208,40 @@ class DocumentProcessingPipeline:
 		# Ensure extraction status is set
 		extracted_doc.extraction_status = ExtractionStatus.SUCCESS
 
-		# Step 6: Generate fingerprint
-		logger.info(f"Pipeline: generating fingerprint for {fetched_url}")
+		# Step 5: Generate fingerprint (for logging/observability -- upsert()
+		# below computes its own fingerprint internally for the actual
+		# duplicate-detection decision, since that logic belongs in the
+		# repository layer, not passed in from the caller)
 		fingerprint = fingerprint_document(extracted_doc)
+		logger.info(f"Pipeline: fingerprint for {fetched_url} is {fingerprint}")
 
-		# Step 7 & 8: Check for duplicates and persist
+		# Step 6: Persist (upsert() now reports directly whether this was
+		# a new document or an existing one with the same fingerprint, so the
+		# separate pre-check that used to live here -- a second, redundant
+		# get_by_fingerprint() query on every single document -- is gone.
+		# See document_repository.py's upsert() for the full explanation of
+		# why the old check-then-act pattern was also a race under
+		# concurrent access, not just redundant.
 		logger.info(f"Pipeline: persisting document from {fetched_url}")
 		try:
-			# Check if a document with this fingerprint already exists
-			existing_fingerprint = None
-			if fingerprint != "empty":
-				existing = self.repository.get_by_fingerprint(fingerprint)
-				if existing is not None:
-					existing_fingerprint = existing.fingerprint
+			persisted, created = self.repository.upsert(extracted_doc, source.id)
 
-			# Attempt to persist
-			persisted = self.repository.upsert(extracted_doc, source.id)
-
-			# Determine if this was a new document or a duplicate
-			if existing_fingerprint is not None:
-				# We found an existing document with this fingerprint before upsert
-				logger.info(
-					f"Pipeline: duplicate document detected, existing id {persisted.id}"
-				)
-				return ProcessingResult(
-					status=ProcessingStatus.DUPLICATE,
-					document_id=persisted.id,
-					document_source_url=fetched_url,
-					fingerprint=persisted.fingerprint,
-				)
-			else:
-				# This was a new document
+			if created:
 				logger.info(
 					f"Pipeline: document created with id {persisted.id} from {fetched_url}"
 				)
 				return ProcessingResult(
 					status=ProcessingStatus.CREATED,
+					document_id=persisted.id,
+					document_source_url=fetched_url,
+					fingerprint=persisted.fingerprint,
+				)
+			else:
+				logger.info(
+					f"Pipeline: duplicate document detected, existing id {persisted.id}"
+				)
+				return ProcessingResult(
+					status=ProcessingStatus.DUPLICATE,
 					document_id=persisted.id,
 					document_source_url=fetched_url,
 					fingerprint=persisted.fingerprint,

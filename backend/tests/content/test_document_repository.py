@@ -309,11 +309,13 @@ def test_upsert_returns_existing_on_duplicate_fingerprint(db_session, cftc_sourc
 		content="Same content.",
 	)
 
-	persisted_a = repo.upsert(doc_a, cftc_source.id)
-	persisted_b = repo.upsert(doc_b, cftc_source.id)
+	persisted_a, created_a = repo.upsert(doc_a, cftc_source.id)
+	persisted_b, created_b = repo.upsert(doc_b, cftc_source.id)
 
 	assert persisted_a.id == persisted_b.id
 	assert persisted_a.source_url == "https://www.cftc.gov/report-a"
+	assert created_a is True
+	assert created_b is False
 
 
 def test_upsert_creates_new_on_different_fingerprint(db_session, cftc_source):
@@ -328,10 +330,12 @@ def test_upsert_creates_new_on_different_fingerprint(db_session, cftc_source):
 		content="Content B.",
 	)
 
-	persisted_a = repo.upsert(doc_a, cftc_source.id)
-	persisted_b = repo.upsert(doc_b, cftc_source.id)
+	persisted_a, created_a = repo.upsert(doc_a, cftc_source.id)
+	persisted_b, created_b = repo.upsert(doc_b, cftc_source.id)
 
 	assert persisted_a.id != persisted_b.id
+	assert created_a is True
+	assert created_b is True
 
 
 def test_empty_fingerprint_documents_are_nullable(db_session, cftc_source):
@@ -496,10 +500,12 @@ def test_idempotent_upsert(db_session, cftc_source):
 	repo = DocumentRepository(db_session)
 	doc = Document(source_url="https://www.cftc.gov/report", content="Content.")
 
-	persisted_1 = repo.upsert(doc, cftc_source.id)
-	persisted_2 = repo.upsert(doc, cftc_source.id)
+	persisted_1, created_1 = repo.upsert(doc, cftc_source.id)
+	persisted_2, created_2 = repo.upsert(doc, cftc_source.id)
 
 	assert persisted_1.id == persisted_2.id
+	assert created_1 is True
+	assert created_2 is False
 	assert repo.count() == 1
 
 

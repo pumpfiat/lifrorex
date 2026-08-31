@@ -1,5 +1,3 @@
-import hashlib
-
 from app.content import Document, deduplicate_documents, fingerprint_document, fingerprint_document_content
 
 
@@ -9,8 +7,6 @@ def test_exact_duplicate_content_yields_same_fingerprint() -> None:
 	assert fingerprint_document_content(doc_a.content) == fingerprint_document_content(doc_b.content)
 	assert fingerprint_document(doc_a) == fingerprint_document(doc_b)
 	assert deduplicate_documents(doc_a, doc_b) is True
-
-
 def test_whitespace_and_newline_normalization_keeps_identity() -> None:
 	doc_a = Document(source_url="https://example.com/a", content="Foreign   exchange\nmarket report\n")
 	doc_b = Document(source_url="https://example.com/b", content="Foreign exchange market report")
@@ -85,7 +81,11 @@ def test_document_fingerprint_has_sha256_format() -> None:
 	fingerprint = fingerprint_document(doc)
 	assert len(fingerprint) == 64
 	assert all(ch in "0123456789abcdef" for ch in fingerprint)
-	assert hashlib.sha256(fingerprint_document_content(doc.content).encode("utf-8")).hexdigest() == fingerprint
+	# fingerprint_document_content used to return raw normalized TEXT, not a
+	# hash, so this line manually re-hashed it to compare. It now returns
+	# the actual hash directly, matching fingerprint_document(doc)'s output
+	# for the same content -- no manual re-hashing needed.
+	assert fingerprint_document_content(doc.content) == fingerprint
 
 
 def test_non_mutation_of_document_state() -> None:

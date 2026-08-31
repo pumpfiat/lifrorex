@@ -21,22 +21,28 @@ def _normalize_document_text(value: Any) -> str:
 
 
 def fingerprint_document_content(content: str | None) -> str:
+	"""Compute the SHA-256 fingerprint hash for a raw content string.
+
+	Returns "empty" (a sentinel, not a hash) for None/whitespace-only
+	content, so callers can distinguish "nothing to fingerprint" from a
+	real hash value. Previously this returned the raw normalized TEXT
+	instead of a hash despite the name and being publicly exported --
+	calling it directly handed back a potentially huge unbounded string
+	instead of a compact fingerprint, and its result didn't match what
+	fingerprint_document() actually produced for the same content.
+	"""
 	if content is None:
 		return "empty"
 	normalized = _normalize_document_text(content)
 	if not normalized:
 		return "empty"
-	return normalized
+	return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def fingerprint_document(document: Document) -> str:
 	if document is None:
 		return "empty"
-	content = document.content or ""
-	normalized = fingerprint_document_content(content)
-	if normalized == "empty":
-		return "empty"
-	return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+	return fingerprint_document_content(document.content or "")
 
 
 def deduplicate_documents(document_a: Document, document_b: Document) -> bool:

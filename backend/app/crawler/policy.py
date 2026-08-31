@@ -25,13 +25,29 @@ class RobotsCrawlPolicy:
 		if not source.crawl_allowed:
 			return self._decision(source.id, url, PolicyOutcome.DISALLOWED, PolicyReason.SOURCE_CRAWL_NOT_ALLOWED)
 
-		source_origin = self._origin(source.url)
-		target_origin = self._origin(url)
-		if target_origin is None:
+		# "Same site" comparison deliberately ignores scheme (see _site()
+		# below) -- a source registered as http://example.gov whose site
+		# redirects everything to https://example.gov (the default behavior
+		# of most real government/education sites today) would previously
+		# have every single fetch rejected as CROSS_ORIGIN, since scheme was
+		# part of the exact-match comparison. Subdomain crossing (e.g.
+		# docs.example.gov vs www.example.gov) is still intentionally
+		# disallowed -- that's a bigger, separate decision (would need
+		# accurate registrable-domain matching to do safely) rather than a
+		# straightforward bug fix.
+		source_site = self._site(source.url)
+		target_site = self._site(url)
+		if target_site is None:
 			reason = PolicyReason.UNSUPPORTED_SCHEME if urlsplit(url).scheme else PolicyReason.INVALID_URL
 			return self._decision(source.id, url, PolicyOutcome.DISALLOWED, reason)
-		if source_origin is None or source_origin != target_origin:
+		if source_site is None or source_site != target_site:
 			return self._decision(source.id, url, PolicyOutcome.DISALLOWED, PolicyReason.CROSS_ORIGIN)
+
+		# robots.txt must still be fetched using the TARGET url's actual
+		# scheme (not the source's original scheme) -- some sites no longer
+		# serve plain http at all, so this has to reflect where the URL
+		# actually resolved, not where the source was originally registered.
+		target_origin = self._origin(url)
 
 		robots_url = f"{target_origin}/robots.txt"
 		cached = self._cache.get(target_origin)
@@ -79,6 +95,28 @@ class RobotsCrawlPolicy:
 		if parsed.scheme not in {"http", "https"} or not parsed.netloc:
 			return None
 		return f"{parsed.scheme}://{parsed.netloc}"
+
+	@staticmethod
+	def _site(url: str) -> tuple[str, int | None] | None:
+		"""(hostname, port) used for same-site comparison, deliberately
+		ignoring scheme. Each URL's own default port (80 for http, 443 for
+		https) normalizes to None, so http://x and https://x -- with no
+		explicit non-default port on either side -- compare equal. An
+		explicit non-default port (e.g. http://x:8080) is preserved and will
+		correctly NOT match a plain https://x, since that's a real signal of
+		a different service, not just a scheme upgrade."""
+		parsed = urlsplit(url)
+		if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+			return None
+		hostname = parsed.hostname
+		if hostname is None:
+			return None
+		port = parsed.port
+		if port == 80 and parsed.scheme == "http":
+			port = None
+		if port == 443 and parsed.scheme == "https":
+			port = None
+		return (hostname.lower(), port)
 
 	@staticmethod
 	def _decision(
