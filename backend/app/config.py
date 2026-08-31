@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 		extra="ignore",
 	)
 
-	database_url: str
+	database_url: str = "sqlite:///./liforex.db"
 
 
 settings = Settings()
