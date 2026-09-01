@@ -5,7 +5,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, MetaData, String, 
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.schemas import KnowledgeCreate, KnowledgeUpdate
-from app.models import Knowledge
+from app.models import Evidence, Knowledge
 from app.services.knowledge_repository import KnowledgeRepository
 
 
@@ -43,6 +43,7 @@ def db_session():
 	)
 	metadata.create_all(engine)
 	Knowledge.__table__.create(engine)
+	Evidence.__table__.create(engine)
 
 	session = sessionmaker(bind=engine, class_=CountingSession)()
 	now = datetime.now(timezone.utc)
@@ -164,3 +165,75 @@ def test_delete_removes_existing_knowledge_and_handles_missing_ids(db_session):
 	assert repository.delete(persisted.id) is True
 	assert repository.get_by_id(persisted.id) is None
 	assert repository.delete(persisted.id) is False
+
+
+def test_create_or_get_reuses_canonical_duplicate_and_preserves_new_evidence(db_session):
+	repository = KnowledgeRepository(db_session)
+	canonical, created = repository.create_or_get(
+		KnowledgeCreate(
+			document_id=1,
+			knowledge_type="fact",
+			content="A pip is a unit of price movement.",
+		)
+	)
+	duplicate, duplicate_created = repository.create_or_get(
+		KnowledgeCreate(
+			document_id=2,
+			knowledge_type="fact",
+			content=" A Pip Is A Unit Of Price Movement! ",
+		)
+	)
+
+	assert created is True
+	assert duplicate_created is False
+	assert duplicate.id == canonical.id
+	assert canonical.document_id == 1
+	assert repository.get_by_fingerprint(canonical.fingerprint) == canonical
+	assert len(repository.get_by_document_id(1)) == 1
+	assert repository.get_by_document_id(2) == []
+
+	assert Evidence.__table__.c.knowledge_id.references(Knowledge.__table__.c.id)
+
+
+def test_create_or_get_keeps_related_but_different_knowledge_separate(db_session):
+	repository = KnowledgeRepository(db_session)
+	first, first_created = repository.create_or_get(
+		KnowledgeCreate(
+			document_id=1,
+			knowledge_type="fact",
+			content="Leverage allows traders to control larger positions.",
+		)
+	)
+	second, second_created = repository.create_or_get(
+		KnowledgeCreate(
+			document_id=1,
+			knowledge_type="fact",
+			content="Leverage magnifies both potential gains and losses.",
+		)
+	)
+
+	assert first_created is True
+	assert second_created is True
+	assert first.id != second.id
+	assert first.fingerprint != second.fingerprint
+
+
+def test_knowledge_fingerprint_is_required_and_uniquely_indexed(db_session):
+	first = Knowledge(
+		document_id=1,
+		knowledge_type="fact",
+		content="Identical content.",
+		meta={},
+	)
+	second = Knowledge(
+		document_id=2,
+		knowledge_type="fact",
+		content="Identical content.",
+		meta={},
+	)
+	db_session.add(first)
+	db_session.commit()
+	db_session.add(second)
+
+	with pytest.raises(Exception):
+		db_session.commit()

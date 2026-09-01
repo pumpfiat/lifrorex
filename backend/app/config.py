@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 	# notes for the one-line Docker command to start one. Override via a real
 	# .env file for anything other than local development.
 	database_url: str = "postgresql+psycopg://liforex:liforex@localhost:5432/liforex"
+	ollama_base_url: str = "http://localhost:11434"
+	ollama_model: str = "llama3.2:latest"
 
 
 settings = Settings()

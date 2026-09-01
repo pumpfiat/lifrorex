@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.schemas.knowledge import KnowledgeCreate, KnowledgeUpdate
+from app.knowledge.deduplication import knowledge_fingerprint
 from app.models.knowledge import Knowledge
 
 
@@ -34,16 +35,48 @@ class KnowledgeRepository:
 		)
 		return list(self.session.scalars(stmt).all())
 
-	def create(self, knowledge: KnowledgeCreate) -> Knowledge:
+	def get_by_fingerprint(self, fingerprint: str) -> Knowledge | None:
+		"""Retrieve the canonical Knowledge record for a content fingerprint."""
+		stmt = select(Knowledge).where(Knowledge.fingerprint == fingerprint)
+		return self.session.scalars(stmt).first()
+
+	def create(self, knowledge: KnowledgeCreate, commit: bool = True) -> Knowledge:
 		"""Create and persist one validated Knowledge record."""
-		db_knowledge = Knowledge(**knowledge.model_dump())
+		db_knowledge = Knowledge(
+			**knowledge.model_dump(exclude={"evidence"}),
+			fingerprint=knowledge_fingerprint(knowledge.content),
+		)
 		try:
 			self.session.add(db_knowledge)
-			self.session.commit()
+			if commit:
+				self.session.commit()
+			else:
+				self.session.flush()
 			self.session.refresh(db_knowledge)
 			return db_knowledge
 		except IntegrityError:
 			self.session.rollback()
+			raise
+
+	def create_or_get(
+		self, knowledge: KnowledgeCreate, commit: bool = True
+	) -> tuple[Knowledge, bool]:
+		"""Create Knowledge or return the first canonical record with the same content.
+
+		Returns ``(knowledge, created)``. Evidence remains attached through the
+		existing Evidence repository once a caller has a persisted knowledge ID.
+		"""
+		fingerprint = knowledge_fingerprint(knowledge.content)
+		existing = self.get_by_fingerprint(fingerprint)
+		if existing is not None:
+			return existing, False
+
+		try:
+			return self.create(knowledge, commit=commit), True
+		except IntegrityError:
+			existing = self.get_by_fingerprint(fingerprint)
+			if existing is not None:
+				return existing, False
 			raise
 
 	def create_many(self, knowledge_records: list[KnowledgeCreate]) -> list[Knowledge]:
@@ -52,7 +85,11 @@ class KnowledgeRepository:
 			return []
 
 		db_knowledge_records = [
-			Knowledge(**knowledge.model_dump()) for knowledge in knowledge_records
+			Knowledge(
+				**knowledge.model_dump(exclude={"evidence"}),
+				fingerprint=knowledge_fingerprint(knowledge.content),
+			)
+			for knowledge in knowledge_records
 		]
 		try:
 			self.session.add_all(db_knowledge_records)

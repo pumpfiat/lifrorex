@@ -1,4 +1,4 @@
-# Liforex
+# Liforex.org
 
 Liforex is a forex-learning platform that combines a browser-based learning experience with a backend system for structured content and data management. The project includes:
 
@@ -33,7 +33,7 @@ The current backend includes a working API surface for source data and database 
 ## Project structure
 
 ```text
-lifrorex/
+liforex/
 ├── README.md
 ├── index.html
 ├── learn.html
@@ -87,7 +87,7 @@ The source model contains fields such as name, URL, categories, trust level, lic
 From the project root, run a simple local web server:
 
 ```bash
-cd lifrorex
+cd liforex
 python3 -m http.server 8000
 ```
 
@@ -103,7 +103,7 @@ This is the easiest way to view the site because the pages load JSON content fro
 From the backend folder:
 
 ```bash
-cd lifrorex/backend
+cd liforex/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

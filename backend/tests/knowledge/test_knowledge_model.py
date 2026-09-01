@@ -70,6 +70,7 @@ def test_knowledge_model_imports_and_constructs():
 	assert knowledge.knowledge_type == "fact"
 	assert knowledge.content == "A normalized knowledge statement."
 	assert knowledge.meta == {"confidence": "high", "topics": ["forex"]}
+	assert knowledge.fingerprint is None
 	assert Knowledge.__table__.c.metadata.name == "metadata"
 
 
@@ -89,6 +90,7 @@ def test_knowledge_persists_required_fields_metadata_and_timestamps(db_session):
 	assert knowledge.knowledge_type == "fact"
 	assert knowledge.content == "A normalized knowledge statement."
 	assert knowledge.meta == {"confidence": "high", "topics": ["forex"]}
+	assert knowledge.fingerprint is not None
 	assert knowledge.created_at is not None
 	assert knowledge.updated_at is not None
 
@@ -121,3 +123,19 @@ def test_knowledge_migration_is_syntactically_valid():
 
 	assert migration.revision == "d3a1e9f4c702"
 	assert migration.down_revision == "b2f4c91a7e3d"
+
+
+def test_knowledge_fingerprint_migration_is_syntactically_valid():
+	migration_path = (
+		Path(__file__).resolve().parents[2]
+		/ "alembic"
+		/ "versions"
+		/ "f5b9d3e7a014_add_knowledge_fingerprint.py"
+	)
+	spec = importlib.util.spec_from_file_location("fingerprint_migration", migration_path)
+	assert spec is not None and spec.loader is not None
+	migration = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(migration)
+
+	assert migration.revision == "f5b9d3e7a014"
+	assert migration.down_revision == "e4f8a2c6b901"
