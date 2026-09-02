@@ -11,6 +11,9 @@ import app.models.document
 import app.models.evidence
 import app.models.knowledge
 import app.models.content
+import app.models.learning
+import app.models.learning_sequence
+import app.models.learner_progress
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
